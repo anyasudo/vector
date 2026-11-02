@@ -1,0 +1,307 @@
+import math
+
+class Point3d:
+    def __init__(self, x, y, z):
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
+
+    def __str__(self):
+        return f"({self.x:.2f}, {self.y:.2f}, {self.z:.2f})"
+
+    def __repr__(self):
+        return f"Point3d(x={self.x:.2f}, y={self.y:.2f}, z={self.z:.2f})"
+
+
+class Vector3d:
+    def __init__(self, x, y, z):
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
+
+    def __str__(self):
+        return f"({self.x:.2f}, {self.y:.2f}, {self.z:.2f})"
+
+    def __repr__(self):
+        return f"Vector3d(x={self.x:.2f}, y={self.y:.2f}, z={self.z:.2f})"
+
+    @classmethod
+    def from_points(cls, start, end):
+        return cls(end.x - start.x, end.y - start.y, end.z - start.z)
+
+    # метод для получения x, y, z 
+    def _extract(self, other):
+        if isinstance(other, Vector3d):
+            return other.x, other.y, other.z
+        elif isinstance(other, (int, float)):
+            return float(other), float(other), float(other)
+        raise ValueError("Операнд должен быть вектором или числом")
+
+    # сравнения 
+    def __eq__(self, other):
+        if isinstance(other, Vector3d):
+            return (self.x, self.y, self.z) == (other.x, other.y, other.z)
+        return False
+
+    def __lt__(self, other):
+        return len(self) < len(other)
+
+    def __gt__(self, other):
+        return len(self) > len(other)
+
+    # арифметика 
+    def __add__(self, other):
+        x, y, z = self._extract(other)
+        return Vector3d(self.x + x, self.y + y, self.z + z)
+    __radd__ = __add__
+
+    def __sub__(self, other):
+        x, y, z = self._extract(other)
+        return Vector3d(self.x - x, self.y - y, self.z - z)
+
+    def __rsub__(self, other):
+        x, y, z = self._extract(other)
+        return Vector3d(x - self.x, y - self.y, z - self.z)
+
+    def __mul__(self, other):
+        x, y, z = self._extract(other)
+        return Vector3d(self.x * x, self.y * y, self.z * z)
+    __rmul__ = __mul__
+
+    def __truediv__(self, other):
+        x, y, z = self._extract(other)
+        return Vector3d(self.x / x, self.y / y, self.z / z)
+
+    def __rtruediv__(self, other):
+        x, y, z = self._extract(other)
+        return Vector3d(x / self.x, y / self.y, z / self.z)
+
+    # Инкрементальная арифметика
+    def __iadd__(self, other):
+        x, y, z = self._extract(other)
+        self.x += x
+        self.y += y
+        self.z += z
+        return self
+
+    def __isub__(self, other):
+        x, y, z = self._extract(other)
+        self.x -= x
+        self.y -= y
+        self.z -= z
+        return self
+
+    def __imul__(self, other):
+        x, y, z = self._extract(other)
+        self.x *= x
+        self.y *= y
+        self.z *= z
+        return self
+
+    def __itruediv__(self, other):
+        x, y, z = self._extract(other)
+        self.x /= x
+        self.y /= y
+        self.z /= z
+        return self
+
+    # Векторное произведение
+    def __matmul__(self, other):
+        return Vector3d(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x
+        )
+
+    @staticmethod
+    def is_collinear(a, b, c):
+        return (a @ b) == Vector3d(0, 0, 0) and (b @ c) == Vector3d(0, 0, 0)
+
+    @staticmethod
+    def is_complanar(a, b, c):
+        dot = a.x * (b.y * c.z - b.z * c.y) - a.y * (b.x * c.z - b.z * c.x) + a.z * (b.x * c.y - b.y * c.x)
+        return dot == 0
+
+    def __len__(self):
+        return int(math.sqrt(self.x**2 + self.y**2 + self.z**2))
+
+    def __getitem__(self, key):
+        if key in (0, 'x'): return self.x
+        if key in (1, 'y'): return self.y
+        if key in (2, 'z'): return self.z
+        raise IndexError("Индекс должен быть 0, 1, 2 или 'x', 'y', 'z'")
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+        yield self.z
+
+
+if __name__ == "__main__":
+    p1, p2 = Point3d(0, 0, 0), Point3d(3, 4, 0)
+    v1 = Vector3d.from_points(p1, p2)
+    v2 = Vector3d(1, 1, 1)
+
+    print(f"Вывод __str__: {v1}")
+    print(f"Вывод __repr__: {repr(v1)}")
+    
+    print(f"Сравнение {v1} > {v2}: {v1 > v2}")
+    
+    print(f"Арифметика v2 + 5: {v2 + 5}")
+    print(f"Арифметика 5 - v2: {5 - v2}")
+    
+    v1 += 2
+    print(f"Инкремент v1 += 2: {v1}")
+    
+    print(f"Векторное произведение v1 @ v2: {v1 @ v2}")
+    print(f"Длина вектора v2: {len(v2)}")
+    
+    print(f"По индексу v2['y']: {v2['y']}")
+    print(f"Перебор v2 в цикле for:")
+    for val in v2:
+        print(val)
+
+
+
+
+
+
+import math
+from typing import Union, Iterator, Any
+
+class Point3d:
+    def __init__(self, x: float, y: float, z: float) -> None:
+        self.x: float = float(x)
+        self.y: float = float(y)
+        self.z: float = float(z)
+
+    def __str__(self) -> str:
+        return f"({self.x:.2f}, {self.y:.2f}, {self.z:.2f})"
+
+    def __repr__(self) -> str:
+        return f"Point3d(x={self.x:.2f}, y={self.y:.2f}, z={self.z:.2f})"
+
+
+class Vector3d:
+    def __init__(self, x: float, y: float, z: float) -> None:
+        self.x: float = float(x)
+        self.y: float = float(y)
+        self.z: float = float(z)
+
+    def __str__(self) -> str:
+        return f"({self.x:.2f}, {self.y:.2f}, {self.z:.2f})"
+
+    def __repr__(self) -> str:
+        return f"Vector3d(x={self.x:.2f}, y={self.y:.2f}, z={self.z:.2f})"
+
+    @classmethod
+    def from_points(cls, start: Point3d, end: Point3d) -> "Vector3d":
+        return cls(end.x - start.x, end.y - start.y, end.z - start.z)
+
+    def _extract(self, other: Union["Vector3d", int, float]) -> tuple[float, float, float]:
+        if isinstance(other, Vector3d):
+            return other.x, other.y, other.z
+        elif isinstance(other, (int, float)):
+            return float(other), float(other), float(other)
+        raise ValueError("Операнд должен быть вектором или числом")
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, Vector3d):
+            return (self.x, self.y, self.z) == (other.x, other.y, other.z)
+        return False
+
+    def __lt__(self, other: "Vector3d") -> bool:
+        return len(self) < len(other)
+
+    def __gt__(self, other: "Vector3d") -> bool:
+        return len(self) > len(other)
+
+    def __add__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        return Vector3d(self.x + x, self.y + y, self.z + z)
+    __radd__ = __add__
+
+    def __sub__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        return Vector3d(self.x - x, self.y - y, self.z - z)
+
+    def __rsub__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        return Vector3d(x - self.x, y - self.y, z - self.z)
+
+    def __mul__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        return Vector3d(self.x * x, self.y * y, self.z * z)
+    __rmul__ = __mul__
+
+    def __truediv__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        return Vector3d(self.x / x, self.y / y, self.z / z)
+
+    def __rtruediv__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        return Vector3d(x / self.x, y / self.y, z / self.z)
+
+    def __iadd__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        self.x += x
+        self.y += y
+        self.z += z
+        return self
+
+    def __isub__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        self.x -= x
+        self.y -= y
+        self.z -= z
+        return self
+
+    def __imul__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        self.x *= x
+        self.y *= y
+        self.z *= z
+        return self
+
+    def __itruediv__(self, other: Union["Vector3d", int, float]) -> "Vector3d":
+        x, y, z = self._extract(other)
+        self.x /= x
+        self.y /= y
+        self.z /= z
+        return self
+
+    def __matmul__(self, other: "Vector3d") -> "Vector3d":
+        return Vector3d(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x
+        )
+
+    @staticmethod
+    def is_collinear(a: "Vector3d", b: "Vector3d", c: "Vector3d") -> bool:
+        return (a @ b) == Vector3d(0, 0, 0) and (b @ c) == Vector3d(0, 0, 0)
+
+    @staticmethod
+    def is_complanar(a: "Vector3d", b: "Vector3d", c: "Vector3d") -> bool:
+        dot = a.x * (b.y * c.z - b.z * c.y) - a.y * (b.x * c.z - b.z * c.x) + a.z * (b.x * c.y - b.y * c.x)
+        return dot == 0
+
+    def __len__(self) -> int:
+        return int(math.sqrt(self.x**2 + self.y**2 + self.z**2))
+
+    def __getitem__(self, key: Union[int, str]) -> float:
+        if key in (0, 'x'): return self.x
+        if key in (1, 'y'): return self.y
+        if key in (2, 'z'): return self.z
+        raise IndexError("Индекс должен быть 0, 1, 2 или 'x', 'y', 'z'")
+
+    def __iter__(self) -> Iterator[float]:
+        yield self.x
+        yield self.y
+        yield self.z
+
+if __name__ == "__main__":
+    p1 = Point3d(1, 2, 3)
+    p2 = Point3d(4, 5, 6)
+    v = Vector3d.from_points(p1, p2)
+    print("Вектор с аннотациями типов:", v)
