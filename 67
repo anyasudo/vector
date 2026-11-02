@@ -1,0 +1,312 @@
+import json
+import time
+import functools
+from abc import ABC, abstractmethod
+from typing import Protocol, Any, Callable
+
+# ---------------------------------------------------------
+# 1. Декоратор для замеров времени
+# ---------------------------------------------------------
+def log_calls(method: Callable) -> Callable:
+    """Оборачивает метод, логируя его имя, класс и время работы."""
+    @functools.wraps(method)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        cls_name = self.__class__.__name__
+        func_name = method.__name__
+        
+        print(f"[{cls_name}.{func_name}] -> старт")
+        t_start = time.perf_counter()
+        
+        result = method(self, *args, **kwargs)
+        
+        t_end = time.perf_counter()
+        print(f"[{cls_name}.{func_name}] -> завершено за {t_end - t_start:.5f} сек")
+        
+        return result
+    return wrapper
+
+# ---------------------------------------------------------
+# 2. Класс для хранения данных отчета
+# ---------------------------------------------------------
+class Report:
+    __slots__ = ("title", "columns", "_rows")
+
+    def __init__(self, title: str, columns: list[str]) -> None:
+        self.title = title
+        self.columns = columns
+        self._rows: list[dict[str, str]] = []
+
+    def add_row(self, row: dict[str, Any]) -> None:
+        # Проверяем, что переданы именно те колонки, которые нужны
+        if set(row.keys()) != set(self.columns):
+            raise ValueError(f"Ошибка! Ожидались колонки: {self.columns}, получено: {list(row.keys())}")
+        
+        # Переводим любые значения (например, числа) в строки
+        stringified_row = {key: str(val) for key, val in row.items()}
+        self._rows.append(stringified_row)
+
+    def rows(self) -> list[dict[str, str]]:
+        return self._rows.copy()
+
+    @property
+    def rows_count(self) -> int:
+        return len(self._rows)
+
+    def __str__(self) -> str:
+        return f"Отчёт '{self.title}' ({self.rows_count} строки, колонки: {', '.join(self.columns)})"
+
+    def __repr__(self) -> str:
+        return f"Report(title={self.title!r}, columns={self.columns!r})"
+
+# ---------------------------------------------------------
+# 3. Абстрактный экспортер и его реализации (Наследование)
+# ---------------------------------------------------------
+class IReportExporter(ABC):
+    __slots__ = ()
+
+    @abstractmethod
+    def export(self, report: Report) -> str:
+        pass
+
+
+class JsonExporter(IReportExporter):
+    __slots__ = ()
+
+    @log_calls
+    def export(self, report: Report) -> str:
+        payload = {
+            "title": report.title,
+            "columns": report.columns,
+            "rows": report.rows()
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+class CsvExporter(IReportExporter):
+    __slots__ = ()
+
+    @log_calls
+    def export(self, report: Report) -> str:
+        # Заголовок
+        result = [";".join(report.columns)]
+        # Данные
+        for row in report.rows():
+            result.append(";".join(row[c] for c in report.columns))
+        return "\n".join(result)
+
+
+class MarkdownExporter(IReportExporter):
+    __slots__ = ()
+
+    @log_calls
+    def export(self, report: Report) -> str:
+        header = f"| {' | '.join(report.columns)} |"
+        divider = f"| {' | '.join(['---'] * len(report.columns))} |"
+        
+        result = [header, divider]
+        for row in report.rows():
+            result.append(f"| {' | '.join(row[c] for c in report.columns)} |")
+            
+        return "\n".join(result)
+
+# ---------------------------------------------------------
+# 4. Протокол для сохранения (Утиная типизация)
+# ---------------------------------------------------------
+class Saver(Protocol):
+    def save(self, path: str, content: str) -> None:
+        ...
+
+# Реализации не наследуются от Saver! Им достаточно просто иметь метод save.
+class FileSaver:
+    __slots__ = ()
+    
+    def save(self, path: str, content: str) -> None:
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(content)
+
+class ConsoleSaver:
+    __slots__ = ()
+    
+    def save(self, path: str, content: str) -> None:
+        print(f"\n--- Вывод файла: {path} ---")
+        print(content)
+
+class MemorySaver:
+    __slots__ = ("storage",)
+    
+    def __init__(self) -> None:
+        self.storage: dict[str, str] = {}
+
+    def save(self, path: str, content: str) -> None:
+        self.storage[path] = content
+
+# ---------------------------------------------------------
+# 5. Главный сборщик (Пайплайн)
+# ---------------------------------------------------------
+class ReportPipeline:
+    __slots__ = ("_exporter", "_saver")
+
+    def __init__(self, exporter: IReportExporter, saver: Saver) -> None:
+        self._exporter = exporter
+        self._saver = saver
+
+    def run(self, report: Report, path: str) -> None:
+        # 1. Экспортер превращает объект в текст
+        formatted_text = self._exporter.export(report)
+        # 2. Сейвер берет этот текст и сохраняет
+        self._saver.save(path, formatted_text)
+
+# ---------------------------------------------------------
+# Демонстрация
+# ---------------------------------------------------------
+if __name__ == "__main__":
+    rep = Report("Продажи", ["date", "product", "amount"])
+    
+    # Передаем числа (100, 200), метод add_row сам сделает из них строки
+    rep.add_row({"date": "2023-11-01", "product": "Стул", "amount": 100})
+    rep.add_row({"date": "2023-11-02", "product": "Стол", "amount": 200})
+    
+    print("Проверка магических методов:")
+    print(str(rep))
+    print(repr(rep))
+    print("-" * 30)
+
+    # Тест 1: JSON + Сохранение в память (MemorySaver)
+    mem_saver = MemorySaver()
+    pipe1 = ReportPipeline(JsonExporter(), mem_saver)
+    pipe1.run(rep, "data.json")
+    print("В памяти сохранено:\n", mem_saver.storage["data.json"])
+    print("-" * 30)
+
+    # Тест 2: Markdown + Вывод в консоль
+    pipe2 = ReportPipeline(MarkdownExporter(), ConsoleSaver())
+    pipe2.run(rep, "table.md")
+
+
+
+
+
+
+from typing import Protocol, List
+from collections import deque
+
+# ==========================================
+# 1. Протокол для приемников (Утиная типизация)
+# ==========================================
+class DataReceiver(Protocol):
+    def consume(self, metric_name: str, current_value: float, trend: str) -> None:
+        ...
+
+# ==========================================
+# 2. Диспетчер потока данных
+# ==========================================
+class DataStream:
+    def __init__(self, history_size: int = 3) -> None:
+        # deque(maxlen=N) автоматически удаляет старые элементы при превышении длины
+        self.history: deque[float] = deque(maxlen=history_size)
+        self.receivers: List[DataReceiver] = []
+
+    def __rshift__(self, receiver: DataReceiver) -> 'DataStream':
+        """Магический метод >> для подключения приемника (stream >> receiver)"""
+        if receiver not in self.receivers:
+            self.receivers.append(receiver)
+        return self  # Возвращаем self для цепочек (stream >> a >> b)
+
+    def __lshift__(self, receiver: DataReceiver) -> 'DataStream':
+        """Магический метод << для отключения приемника (stream << receiver)"""
+        if receiver in self.receivers:
+            self.receivers.remove(receiver)
+        return self
+
+    def broadcast(self, metric_name: str, new_value: float) -> None:
+        """Анализирует тренд и рассылает данные всем подписчикам"""
+        trend = "STABLE"
+        
+        # Если в истории уже есть значения, сравниваем с последним
+        if self.history:
+            prev_value = self.history[-1]
+            if new_value > prev_value:
+                trend = "UP"
+            elif new_value < prev_value:
+                trend = "DOWN"
+        
+        # Добавляем новое значение в историю
+        self.history.append(new_value)
+
+        # Рассылаем данные
+        for receiver in self.receivers:
+            receiver.consume(metric_name, new_value, trend)
+
+# ==========================================
+# 3. Компоненты-приемники
+# ==========================================
+class ConsoleDashboard:
+    def consume(self, metric_name: str, current_value: float, trend: str) -> None:
+        print(f"[Панель] Метрика: {metric_name} | Значение: {current_value} | Направление: {trend}")
+
+class ThresholdGuard:
+    def __init__(self, limit: float) -> None:
+        self.limit = limit
+
+    def consume(self, metric_name: str, current_value: float, trend: str) -> None:
+        # Вард срабатывает только если значение выше лимита И оно продолжает расти
+        if current_value > self.limit and trend == "UP":
+            print(f"!!! [АЛЕРТ] {metric_name} превысил предел {self.limit}! Текущее: {current_value} (Тренд: {trend}) !!!")
+
+# ==========================================
+# 4. Источник данных с авто-апдейтом (Сеттер)
+# ==========================================
+class MetricTracker:
+    def __init__(self, metric_name: str) -> None:
+        self.metric_name = metric_name
+        self._load: float = 0.0  # Приватное поле для хранения значения
+        self.stream = DataStream()
+
+    @property
+    def load(self) -> float:
+        return self._load
+
+    @load.setter
+    def load(self, new_value: float) -> None:
+        """Сеттер: при изменении значения автоматически запускает рассылку"""
+        self._load = new_value
+        self.stream.broadcast(self.metric_name, new_value)
+
+
+# ==========================================
+# Демонстрация (Тестирование системы)
+# ==========================================
+if __name__ == "__main__":
+    print("--- 1. Создание системы ---")
+    # 1. Создаем трекер
+    cpu_tracker = MetricTracker("CPU_Load")
+    
+    # 2. Создаем приемники
+    dashboard = ConsoleDashboard()
+    guard = ThresholdGuard(limit=80.0)
+    
+    # Подключаем их к потоку трекера красивым синтаксисом (оператор >>)
+    cpu_tracker.stream >> dashboard >> guard
+    
+    print("\n--- 2. Симуляция изменения нагрузки ---")
+    print("\nПодаем 50:")
+    cpu_tracker.load = 50  # Срабатывает @load.setter -> broadcast -> вывод
+
+    print("\nПодаем 75:")
+    cpu_tracker.load = 75
+
+    print("\nПодаем 85 (Должен сработать вард, так как > 80 и UP):")
+    cpu_tracker.load = 85
+
+    print("\nПодаем 82 (Вард молчит, так как > 80, но тренд DOWN - нагрузка падает):")
+    cpu_tracker.load = 82
+
+    print("\nПодаем 88 (Снова срабатывает вард, тренд UP):")
+    cpu_tracker.load = 88
+
+    print("\n--- 3. Отключение варда ---")
+    # Отключаем ThresholdGuard оператором <<
+    cpu_tracker.stream << guard
+    
+    print("\nПодаем 95 (Выведется только Панель, вард больше не слушает):")
+    cpu_tracker.load = 95
