@@ -1,0 +1,12 @@
+if __name__ == "__main__":
+    # 1. Готовим данные
+    rep = Report("Продажи", ["date", "product", "amount"])
+    rep.add_row({"date": "2026-11-01", "product": "Мышь", "amount": 1500})
+    
+    # === СОХРАНЕНИЕ В РЕАЛЬНЫЙ ФАЙЛ ===
+    # Создаем дирижера, даем ему формат CSV и курьера FileSaver
+    pipeline_csv = ReportPipeline(CsvExporter(), FileSaver())
+    
+    # Нажимаем старт. Передаем данные и имя файла.
+    pipeline_csv.run(rep, "report.csv")
+    print("Файл report.csv успешно создан в папке с кодом!")
