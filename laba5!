@@ -1,0 +1,177 @@
+import os
+import json
+from dataclasses import dataclass, field
+from typing import Protocol, TypeVar, Generic, Sequence, Callable, Any
+
+@dataclass
+class User:
+    id: int
+    name: str
+    login: str
+    password: str = field(repr=False)
+    email: str | None = None
+    address: str | None = None
+
+    def __lt__(self, other):
+        return self.name < other.name
+
+# функция прямой сериализации 
+def user_serialize(user: User) -> dict[str, Any]:
+    return {
+        "id": user.id,
+        "name": user.name,
+        "login": user.login,
+        "password": user.password,
+        "email": user.email,
+        "address": user.address
+    }
+
+# функция обратной сериализации 
+def user_deserialize(data: dict[str, Any]) -> User:
+    return User(
+        id=data["id"],
+        name=data["name"],
+        login=data["login"],
+        password=data["password"],
+        email=data.get("email"),
+        address=data.get("address")
+    )
+
+T = TypeVar('T')
+
+class IDataRepository(Protocol[T]):
+    def get_all(self) -> Sequence[T]: ...
+    def get_by_id(self, item_id: int) -> T | None: ...
+    def add(self, item: T) -> None: ...
+    def update(self, item: T) -> None: ...
+    def delete(self, item: T) -> None: ...
+
+class IUserRepository(IDataRepository[User], Protocol):
+    def get_by_login(self, login: str) -> User | None: ...
+
+# базовая реализация репозитория 
+class DataRepository(Generic[T]):
+    def __init__(self, filename: str, serialize_fn: Callable[[T], dict], deserialize_fn: Callable[[dict], T]):
+        self.filename = filename
+        self.serialize_fn = serialize_fn
+        self.deserialize_fn = deserialize_fn
+        self._data: dict[int, T] = self._load()
+
+    # чтение файла и десериализация данных
+    def _load(self) -> dict[int, T]:
+        if os.path.exists(self.filename):
+            with open(self.filename, 'r', encoding='utf-8') as f:
+                try:
+                    raw_data = json.load(f)
+                    return {int(k): self.deserialize_fn(v) for k, v in raw_data.items()}
+                except json.JSONDecodeError:
+                    return {}
+        return {}
+
+    # сериализация данных и запись в файл
+    def _save(self) -> None:
+        raw_data = {str(k): self.serialize_fn(v) for k, v in self._data.items()}
+        with open(self.filename, 'w', encoding='utf-8') as f:
+            json.dump(raw_data, f, ensure_ascii=False, indent=4)
+
+    def get_all(self) -> list[T]:
+        return list(self._data.values())
+
+    def get_by_id(self, item_id: int) -> T | None:
+        return self._data.get(item_id)
+
+    def add(self, item: T) -> None:
+        self._data[item.id] = item
+        self._save()
+
+    def update(self, item: T) -> None:
+        if item.id in self._data:
+            self._data[item.id] = item
+            self._save()
+
+    def delete(self, item: T) -> None:
+        if item.id in self._data:
+            del self._data[item.id]
+            self._save()
+
+class UserRepository(DataRepository[User]):
+    def __init__(self, filename: str):
+        super().__init__(filename, serialize_fn=user_serialize, deserialize_fn=user_deserialize)
+
+    def get_by_login(self, login: str) -> User | None:
+        for user in self.get_all():
+            if user.login == login:
+                return user
+        return None
+
+# интерфейс сервиса авторизации
+class IAuthService(Protocol):
+    def sign_in(self, user: User) -> None: ...
+    def sign_out(self, user: User) -> None: ...
+    @property
+    def is_authorized(self) -> bool: ...
+    @property
+    def current_user(self) -> User | None: ...
+
+# реализация сервиса авторизации
+class AuthService:
+    def __init__(self, repo: IUserRepository, session_file: str = "session.json"):
+        self.repo = repo
+        self.session_file = session_file
+        self._current_user: User | None = None
+        self._auto_login()
+
+    def _auto_login(self) -> None:
+        if os.path.exists(self.session_file):
+            with open(self.session_file, 'r', encoding='utf-8') as f:
+                try:
+                    user_id = json.load(f)
+                    self._current_user = self.repo.get_by_id(int(user_id))
+                except json.JSONDecodeError:
+                    pass
+
+    def sign_in(self, user: User) -> None:
+        self._current_user = user
+        with open(self.session_file, 'w', encoding='utf-8') as f:
+            json.dump(user.id, f)
+
+    def sign_out(self, user: User) -> None:
+        if self._current_user and self._current_user.id == user.id:
+            self._current_user = None
+            if os.path.exists(self.session_file):
+                os.remove(self.session_file)
+
+    @property
+    def is_authorized(self) -> bool:
+        return self._current_user is not None
+
+    @property
+    def current_user(self) -> User | None:
+        return self._current_user
+
+if __name__ == "__main__":
+    if os.path.exists("users.json"): os.remove("users.json")
+    if os.path.exists("session.json"): os.remove("session.json")
+
+    repo = UserRepository("users.json")
+    auth = AuthService(repo)
+
+    user1 = User(1, "ярик", "yar", "123")
+    user2 = User(2, "олег", "oleg", "qwerty", "o@mail.ru", "москва")
+    
+    repo.add(user1)
+    repo.add(user2)
+    
+    user1.address = "калининград"
+    repo.update(user1)
+
+    auth.sign_in(user1)
+    print(f"в системе: {auth.current_user.name}")
+
+    auth.sign_out(user1)
+    auth.sign_in(user2)
+    print(f"в системе: {auth.current_user.name}")
+
+    new_auth = AuthService(repo)
+    if new_auth.is_authorized:
+        print(f"авто-вход сработал для: {new_auth.current_user.name}")
